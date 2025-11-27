@@ -25,9 +25,21 @@ const initializeFirebase = () => {
   // Option 1: Full service account JSON as environment variable
   if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
     try {
-      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+      // Handle escaped newlines in the JSON string (common in cPanel)
+      let keyString = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+      
+      // Parse the JSON
+      serviceAccount = JSON.parse(keyString);
+      
+      // Fix the private key - replace escaped newlines with actual newlines
+      if (serviceAccount.private_key) {
+        serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+      }
+      
+      console.log('📋 Firebase service account loaded for project:', serviceAccount.project_id);
     } catch (error) {
       console.error('Error parsing FIREBASE_SERVICE_ACCOUNT_KEY:', error.message);
+      console.error('Key preview:', process.env.FIREBASE_SERVICE_ACCOUNT_KEY?.substring(0, 100) + '...');
       throw new Error('Invalid FIREBASE_SERVICE_ACCOUNT_KEY format. Must be valid JSON.');
     }
   } 
@@ -48,18 +60,25 @@ const initializeFirebase = () => {
       client_x509_cert_url: `https://www.googleapis.com/robot/v1/metadata/x509/${encodeURIComponent(process.env.FIREBASE_CLIENT_EMAIL)}`
     };
   } else {
+    console.error('❌ Firebase credentials not found!');
+    console.error('Available env vars:', Object.keys(process.env).filter(k => k.includes('FIREBASE')));
     throw new Error(
       'Firebase credentials not found. Please set either FIREBASE_SERVICE_ACCOUNT_KEY ' +
       'or individual variables (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY).'
     );
   }
 
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: process.env.FIREBASE_DATABASE_URL || `https://${serviceAccount.project_id}.firebaseio.com`
-  });
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      databaseURL: process.env.FIREBASE_DATABASE_URL || `https://${serviceAccount.project_id}.firebaseio.com`
+    });
+    console.log('✅ Firebase Admin SDK initialized successfully');
+  } catch (error) {
+    console.error('❌ Firebase initialization failed:', error.message);
+    throw error;
+  }
 
-  console.log('✅ Firebase Admin SDK initialized successfully');
   return admin;
 };
 

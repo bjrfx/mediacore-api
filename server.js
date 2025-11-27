@@ -7,8 +7,15 @@
  * Compatible with cPanel's Node.js App environment.
  */
 
-// Load environment variables first
+// Load environment variables first (for local development)
+// In cPanel, environment variables are set via the control panel
 require('dotenv').config();
+
+// Debug: Log environment status (remove in production)
+console.log('🔧 Environment Check:');
+console.log('  - NODE_ENV:', process.env.NODE_ENV || 'not set');
+console.log('  - PORT:', process.env.PORT || 'not set (will use 3000)');
+console.log('  - FIREBASE_SERVICE_ACCOUNT_KEY:', process.env.FIREBASE_SERVICE_ACCOUNT_KEY ? 'SET ✓' : 'NOT SET ✗');
 
 const express = require('express');
 const cors = require('cors');
@@ -919,7 +926,13 @@ app.use((req, res) => {
 // START SERVER
 // =============================================================================
 
-app.listen(PORT, () => {
+// Check if running under Passenger (cPanel)
+if (typeof(PhusionPassenger) !== 'undefined') {
+  PhusionPassenger.configure({ autoInstall: false });
+}
+
+// For Passenger, we need to listen on 'passenger' or the provided port
+const server = app.listen(PORT, () => {
   console.log('═══════════════════════════════════════════════════════');
   console.log('  🎬 MediaCore API Server');
   console.log('═══════════════════════════════════════════════════════');
@@ -930,5 +943,5 @@ app.listen(PORT, () => {
   console.log('═══════════════════════════════════════════════════════');
 });
 
-// Export for testing
+// Export for testing and Passenger
 module.exports = app;
