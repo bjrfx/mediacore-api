@@ -6,13 +6,16 @@
  */
 
 const admin = require('firebase-admin');
+const path = require('path');
+const fs = require('fs');
 
 /**
  * Initialize Firebase Admin SDK
  * 
- * The service account credentials can be provided in two ways:
- * 1. As a JSON string in FIREBASE_SERVICE_ACCOUNT_KEY environment variable
- * 2. As individual environment variables (FIREBASE_PROJECT_ID, etc.)
+ * The service account credentials can be provided in three ways:
+ * 1. As a JSON file at config/serviceAccountKey.json (RECOMMENDED for cPanel)
+ * 2. As a JSON string in FIREBASE_SERVICE_ACCOUNT_KEY environment variable
+ * 3. As individual environment variables (FIREBASE_PROJECT_ID, etc.)
  */
 const initializeFirebase = () => {
   // Check if already initialized
@@ -22,13 +25,24 @@ const initializeFirebase = () => {
 
   let serviceAccount;
 
-  // Option 1: Full service account JSON as environment variable
-  if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+  // Option 1: Load from JSON file (BEST for cPanel - avoids env var length limits)
+  const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
+  
+  if (fs.existsSync(serviceAccountPath)) {
     try {
-      // Handle escaped newlines in the JSON string (common in cPanel)
+      const fileContent = fs.readFileSync(serviceAccountPath, 'utf8');
+      serviceAccount = JSON.parse(fileContent);
+      console.log('📋 Firebase credentials loaded from serviceAccountKey.json');
+      console.log('   Project:', serviceAccount.project_id);
+    } catch (error) {
+      console.error('Error reading serviceAccountKey.json:', error.message);
+    }
+  }
+
+  // Option 2: Full service account JSON as environment variable
+  if (!serviceAccount && process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+    try {
       let keyString = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-      
-      // Parse the JSON
       serviceAccount = JSON.parse(keyString);
       
       // Fix the private key - replace escaped newlines with actual newlines
@@ -36,17 +50,18 @@ const initializeFirebase = () => {
         serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
       }
       
-      console.log('📋 Firebase service account loaded for project:', serviceAccount.project_id);
+      console.log('📋 Firebase credentials loaded from environment variable');
+      console.log('   Project:', serviceAccount.project_id);
     } catch (error) {
       console.error('Error parsing FIREBASE_SERVICE_ACCOUNT_KEY:', error.message);
-      console.error('Key preview:', process.env.FIREBASE_SERVICE_ACCOUNT_KEY?.substring(0, 100) + '...');
-      throw new Error('Invalid FIREBASE_SERVICE_ACCOUNT_KEY format. Must be valid JSON.');
+      console.error('Key length:', process.env.FIREBASE_SERVICE_ACCOUNT_KEY?.length || 0);
     }
-  } 
-  // Option 2: Individual environment variables
-  else if (process.env.FIREBASE_PROJECT_ID && 
-           process.env.FIREBASE_CLIENT_EMAIL && 
-           process.env.FIREBASE_PRIVATE_KEY) {
+  }
+  
+  // Option 3: Individual environment variables
+  if (!serviceAccount && process.env.FIREBASE_PROJECT_ID && 
+      process.env.FIREBASE_CLIENT_EMAIL && 
+      process.env.FIREBASE_PRIVATE_KEY) {
     serviceAccount = {
       type: 'service_account',
       project_id: process.env.FIREBASE_PROJECT_ID,
@@ -59,12 +74,19 @@ const initializeFirebase = () => {
       auth_provider_x509_cert_url: 'https://www.googleapis.com/oauth2/v1/certs',
       client_x509_cert_url: `https://www.googleapis.com/robot/v1/metadata/x509/${encodeURIComponent(process.env.FIREBASE_CLIENT_EMAIL)}`
     };
-  } else {
+    console.log('📋 Firebase credentials loaded from individual env vars');
+  }
+  
+  if (!serviceAccount) {
     console.error('❌ Firebase credentials not found!');
-    console.error('Available env vars:', Object.keys(process.env).filter(k => k.includes('FIREBASE')));
+    console.error('   Checked: config/serviceAccountKey.json - NOT FOUND');
+    console.error('   Checked: FIREBASE_SERVICE_ACCOUNT_KEY env var - NOT SET or INVALID');
+    console.error('   Checked: Individual env vars - NOT SET');
     throw new Error(
-      'Firebase credentials not found. Please set either FIREBASE_SERVICE_ACCOUNT_KEY ' +
-      'or individual variables (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY).'
+      'Firebase credentials not found. Please either:\n' +
+      '1. Add config/serviceAccountKey.json file (recommended for cPanel)\n' +
+      '2. Set FIREBASE_SERVICE_ACCOUNT_KEY environment variable\n' +
+      '3. Set individual FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY variables'
     );
   }
 
