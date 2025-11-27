@@ -923,25 +923,30 @@ app.use((req, res) => {
 });
 
 // =============================================================================
-// START SERVER
+// START SERVER (only for direct execution, NOT for Passenger/cPanel)
 // =============================================================================
 
-// Check if running under Passenger (cPanel)
-if (typeof(PhusionPassenger) !== 'undefined') {
-  PhusionPassenger.configure({ autoInstall: false });
+// Passenger sets this environment variable
+const isPassenger = typeof(PhusionPassenger) !== 'undefined' || process.env.PASSENGER_APP_ENV;
+
+if (require.main === module && !isPassenger) {
+  // Running directly via `node server.js` (local development)
+  const server = app.listen(PORT, () => {
+    console.log('═══════════════════════════════════════════════════════');
+    console.log('  🎬 MediaCore API Server');
+    console.log('═══════════════════════════════════════════════════════');
+    console.log(`  🚀 Server running on port ${PORT}`);
+    console.log(`  📁 Upload directory: ${uploadPath}`);
+    console.log(`  📊 Max file size: ${MAX_FILE_SIZE / (1024 * 1024)}MB`);
+    console.log(`  🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log('═══════════════════════════════════════════════════════');
+  });
+} else {
+  // Being required as module (Passenger/cPanel) - don't start server
+  console.log('📦 MediaCore API module loaded');
+  console.log(`  📁 Upload directory: ${uploadPath}`);
+  console.log(`  🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
 }
 
-// For Passenger, we need to listen on 'passenger' or the provided port
-const server = app.listen(PORT, () => {
-  console.log('═══════════════════════════════════════════════════════');
-  console.log('  🎬 MediaCore API Server');
-  console.log('═══════════════════════════════════════════════════════');
-  console.log(`  🚀 Server running on port ${PORT}`);
-  console.log(`  📁 Upload directory: ${uploadPath}`);
-  console.log(`  📊 Max file size: ${MAX_FILE_SIZE / (1024 * 1024)}MB`);
-  console.log(`  🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log('═══════════════════════════════════════════════════════');
-});
-
-// Export for testing and Passenger
+// Export the Express app for Passenger
 module.exports = app;

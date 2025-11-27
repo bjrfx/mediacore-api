@@ -1,32 +1,68 @@
 /**
  * app.js - cPanel/Passenger Entry Point
  * 
- * This file is required for cPanel's Phusion Passenger to work properly.
+ * This is the entry point for Phusion Passenger on cPanel.
+ * Passenger expects this file to export an Express app.
  */
 
-// Wrap in try-catch to capture startup errors
+'use strict';
+
+const express = require('express');
+const path = require('path');
+const fs = require('fs');
+
+// Create a basic app for error handling
+const errorApp = express();
+
+// Startup logging
+console.log('========================================');
+console.log('MediaCore API - Passenger Startup');
+console.log('========================================');
+console.log('Node version:', process.version);
+console.log('Directory:', __dirname);
+console.log('Time:', new Date().toISOString());
+
+// Check for required files
+const configDir = path.join(__dirname, 'config');
+const serviceKeyPath = path.join(configDir, 'serviceAccountKey.json');
+
+console.log('Config directory:', configDir);
+console.log('Service key path:', serviceKeyPath);
+console.log('Service key exists:', fs.existsSync(serviceKeyPath));
+
+// List config directory contents
+if (fs.existsSync(configDir)) {
+  console.log('Config files:', fs.readdirSync(configDir));
+} else {
+  console.log('ERROR: Config directory does not exist!');
+}
+
+let app;
+let startupError = null;
+
 try {
-  // Load the main application
-  const app = require('./server');
-  
-  // Export for Passenger
-  module.exports = app;
+  // Attempt to load the full application
+  app = require('./server');
+  console.log('✅ Application loaded successfully');
 } catch (error) {
-  console.error('❌ Application failed to start:', error.message);
-  console.error(error.stack);
+  startupError = error;
+  console.error('❌ Failed to load application:');
+  console.error('   Error:', error.message);
+  console.error('   Stack:', error.stack);
   
-  // Create a minimal error app so Passenger doesn't crash completely
-  const express = require('express');
-  const errorApp = express();
+  // Create error response app
+  app = errorApp;
   
-  errorApp.use((req, res) => {
+  app.use((req, res) => {
     res.status(500).json({
       success: false,
-      error: 'Application Startup Error',
+      error: 'Application Startup Failed',
       message: error.message,
-      hint: 'Check the Passenger log file for details'
+      nodeVersion: process.version,
+      timestamp: new Date().toISOString()
     });
   });
-  
-  module.exports = errorApp;
 }
+
+// Export for Passenger
+module.exports = app;
