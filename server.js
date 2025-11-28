@@ -7,16 +7,6 @@
  * Compatible with cPanel's Node.js App environment.
  */
 
-// Load environment variables first (for local development)
-// In cPanel, environment variables are set via the control panel
-require('dotenv').config();
-
-// Debug: Log environment status (remove in production)
-console.log('🔧 Environment Check:');
-console.log('  - NODE_ENV:', process.env.NODE_ENV || 'not set');
-console.log('  - PORT:', process.env.PORT || 'not set (will use 3000)');
-console.log('  - FIREBASE_SERVICE_ACCOUNT_KEY:', process.env.FIREBASE_SERVICE_ACCOUNT_KEY ? 'SET ✓' : 'NOT SET ✗');
-
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -43,12 +33,13 @@ const {
 const app = express();
 
 // =============================================================================
-// CONFIGURATION
+// CONFIGURATION (Hardcoded for cPanel)
 // =============================================================================
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 const UPLOAD_DIR = process.env.UPLOAD_DIR || './public/uploads';
-const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE) || 500 * 1024 * 1024; // 500MB default
+const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
+const CORS_ORIGIN = '*';
 
 // Allowed file types
 const ALLOWED_MIME_TYPES = {
@@ -126,7 +117,7 @@ const upload = multer({
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  origin: CORS_ORIGIN,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key']
 }));
@@ -923,15 +914,14 @@ app.use((req, res) => {
 });
 
 // =============================================================================
-// START SERVER (only for direct execution, NOT for Passenger/cPanel)
+// START SERVER (only when run directly, not when imported by app.js)
 // =============================================================================
 
-// Passenger sets this environment variable
-const isPassenger = typeof(PhusionPassenger) !== 'undefined' || process.env.PASSENGER_APP_ENV;
-
-if (require.main === module && !isPassenger) {
-  // Running directly via `node server.js` (local development)
-  const server = app.listen(PORT, () => {
+// Only start listening if run directly (node server.js)
+// When imported by app.js, app.js handles the listening
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
     console.log('═══════════════════════════════════════════════════════');
     console.log('  🎬 MediaCore API Server');
     console.log('═══════════════════════════════════════════════════════');
@@ -942,11 +932,10 @@ if (require.main === module && !isPassenger) {
     console.log('═══════════════════════════════════════════════════════');
   });
 } else {
-  // Being required as module (Passenger/cPanel) - don't start server
   console.log('📦 MediaCore API module loaded');
   console.log(`  📁 Upload directory: ${uploadPath}`);
-  console.log(`  🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`  🌐 Environment: ${process.env.NODE_ENV || 'production'}`);
 }
 
-// Export the Express app for Passenger
+// Export the Express app
 module.exports = app;
