@@ -43,13 +43,33 @@ const CORS_ORIGIN = '*';
 
 // Allowed file types
 const ALLOWED_MIME_TYPES = {
-  video: ['video/mp4'],
-  audio: ['audio/mpeg', 'audio/mp3']
+  video: [
+    'video/mp4',
+    'video/quicktime',      // .mov
+    'video/webm',
+    'video/x-msvideo',      // .avi
+    'video/x-matroska',     // .mkv
+    'video/mpeg'
+  ],
+  audio: [
+    'audio/mpeg',           // .mp3
+    'audio/mp3',
+    'audio/wav',
+    'audio/x-wav',
+    'audio/wave',
+    'audio/x-m4a',
+    'audio/m4a',
+    'audio/mp4',            // .m4a can also be this
+    'audio/aac',
+    'audio/x-aac',
+    'audio/ogg',
+    'audio/flac'
+  ]
 };
 
 const ALLOWED_EXTENSIONS = {
-  video: ['.mp4'],
-  audio: ['.mp3']
+  video: ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.mpeg', '.mpg'],
+  audio: ['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac']
 };
 
 // =============================================================================
@@ -73,12 +93,24 @@ const uploadPath = ensureUploadDir();
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const type = req.body.type || 'video';
+    // Try to get type from body, query, or infer from file mimetype
+    let type = req.body.type || req.query.type || 'video';
+    
+    // If type still not determined, infer from file mimetype
+    if (!type || type === 'video') {
+      if (file.mimetype.startsWith('audio/')) {
+        type = 'audio';
+      }
+    }
+    
     const typeDir = path.join(uploadPath, type === 'audio' ? 'audio' : 'video');
     
     if (!fs.existsSync(typeDir)) {
       fs.mkdirSync(typeDir, { recursive: true });
     }
+    
+    // Store type for later use
+    req.detectedType = type;
     
     cb(null, typeDir);
   },
@@ -91,15 +123,56 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  const type = req.body.type || 'video';
   const ext = path.extname(file.originalname).toLowerCase();
-  const allowedMimes = ALLOWED_MIME_TYPES[type] || ALLOWED_MIME_TYPES.video;
-  const allowedExts = ALLOWED_EXTENSIONS[type] || ALLOWED_EXTENSIONS.video;
   
-  if (allowedMimes.includes(file.mimetype) && allowedExts.includes(ext)) {
+  // Determine type from multiple sources since body might not be parsed yet
+  // 1. Check req.body.type (might be available if type field comes before file in form)
+  // 2. Check query parameter
+  // 3. Infer from file mimetype
+  // 4. Infer from file extension
+  let type = req.body.type || req.query.type;
+  
+  // If type not explicitly provided, infer from file
+  if (!type) {
+    if (file.mimetype.startsWith('audio/') || ALLOWED_EXTENSIONS.audio.includes(ext)) {
+      type = 'audio';
+    } else {
+      type = 'video';
+    }
+  }
+  
+  // Store detected type on request for later use by route handler
+  req.detectedType = type;
+  
+  const allowedExts = ALLOWED_EXTENSIONS[type] || ALLOWED_EXTENSIONS.video;
+  const allowedMimes = ALLOWED_MIME_TYPES[type] || ALLOWED_MIME_TYPES.video;
+  
+  // Check if extension is allowed for this type
+  const extAllowed = allowedExts.includes(ext);
+  
+  // Check if MIME type is allowed (or starts with video/audio based on type)
+  const mimeAllowed = allowedMimes.includes(file.mimetype) || 
+                      (type === 'video' && file.mimetype.startsWith('video/')) ||
+                      (type === 'audio' && file.mimetype.startsWith('audio/'));
+  
+  console.log(`📁 File upload validation: ext=${ext}, mime=${file.mimetype}, type=${type}, extAllowed=${extAllowed}, mimeAllowed=${mimeAllowed}`);
+  
+  // Allow if extension matches (primary check)
+  if (extAllowed) {
+    if (!mimeAllowed) {
+      console.log(`⚠️ File accepted with mismatched MIME type: ${file.mimetype} for extension ${ext}`);
+    }
     cb(null, true);
   } else {
-    cb(new Error(`Invalid file type. Allowed: ${allowedExts.join(', ')} for ${type}`), false);
+    // Check if the extension belongs to the OTHER type (common mistake)
+    const otherType = type === 'video' ? 'audio' : 'video';
+    const otherExts = ALLOWED_EXTENSIONS[otherType];
+    
+    if (otherExts.includes(ext)) {
+      cb(new Error(`Invalid file type. You're uploading a ${otherType} file (${ext}) but selected type="${type}". Please set type="${otherType}" in your form data.`), false);
+    } else {
+      cb(new Error(`Invalid file type "${ext}" for ${type}. Allowed extensions: ${allowedExts.join(', ')}`), false);
+    }
   }
 };
 
@@ -477,8 +550,16 @@ app.delete('/admin/api-keys/:id', checkAdminAuth, async (req, res) => {
  */
 app.post('/admin/media', checkAdminAuth, upload.single('file'), async (req, res) => {
   try {
-    const { title, subtitle, type = 'video' } = req.body;
+    const { title, subtitle } = req.body;
     const file = req.file;
+    
+    // Get type from body, query, or use detected type from multer, or infer from file
+    let type = req.body.type || req.query.type || req.detectedType || 'video';
+    
+    // Double-check: if file is audio but type says video, correct it
+    if (file && file.mimetype.startsWith('audio/')) {
+      type = 'audio';
+    }
 
     if (!file) {
       return res.status(400).json({
